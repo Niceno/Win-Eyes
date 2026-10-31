@@ -61,3 +61,7 @@ Windows scaling.
 Win-Eyes grew out of [Net-Eye](https://github.com/Niceno/Net-Eye), a
 small always-on-top internet-connection indicator, and reuses its
 borderless, alpha-blended window.
+
+## License
+
+Released under the [MIT License](LICENSE).

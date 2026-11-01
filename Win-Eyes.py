@@ -10,6 +10,8 @@ from PIL import Image, ImageDraw, ImageChops
 # ----------------------------------------------------------------------
 
 SIZE          = 70   # Size of one eye; the window is two eyes wide
+ZOOM          =  1   # Starting zoom; can be changed from the right-click menu
+ZOOMS         = (0.75, 1, 1.5, 2, 3, 4)   # Zoom choices in the menu
 FOLLOW_MS     = 20   # How often the cursor position is polled
 PUPIL_RADIUS  =  6   # Radius of the pupil
 PUPIL_GAP     =  6   # Smallest gap between the pupil and the eye outline
@@ -49,6 +51,9 @@ WM_NCLBUTTONDOWN = 0x00A1
 HTCAPTION        = 2
 
 MF_STRING       = 0x0000
+MF_CHECKED      = 0x0008
+MF_POPUP        = 0x0010
+MF_SEPARATOR    = 0x0800
 TPM_RIGHTBUTTON = 0x0002
 TPM_RETURNCMD   = 0x0100
 
@@ -59,6 +64,7 @@ BI_RGB         = 0
 DIB_RGB_COLORS = 0
 
 ID_EXIT         = 1
+ID_ZOOM_FIRST   = 100   # Zoom choice i gets command ID_ZOOM_FIRST + i
 FOLLOW_TIMER_ID = 1
 
 IDC_ARROW = 32512
@@ -272,23 +278,38 @@ gdi32.DeleteDC.restype  = wintypes.BOOL
 
 
 # ----------------------------------------------------------------------
-# Drawing: Pillow draws the eyes 4x larger and downsamples them smoothly,
-# so every edge blends with whatever is behind the window.
+# Drawing: Pillow draws the eyes several times larger and downsamples
+# them smoothly, so every edge blends with whatever is behind the window.
 # ----------------------------------------------------------------------
 
-SCALE = 4
-
 # Display scaling of the monitor the window is on (1.0 = 100 %, 96 DPI).
-# All sizes above are given at 100 % and multiplied by this when drawing.
 dpi_scale = 1.0
+
+# Zoom chosen from the right-click menu.
+zoom = ZOOM
+
+
+def scale():
+    """All sizes above are given at 100 % and multiplied by this."""
+    return dpi_scale * zoom
+
 
 # Pupil offsets from the eye centres (at 100 % scaling) drawn last,
 # so nothing is redrawn while neither the cursor nor the window moves.
 current_pupils = ((0.0, 0.0), (0.0, 0.0))
 
 
+def oversample():
+    """How many times larger than on screen the eyes are drawn.
+
+    Small eyes need 4x for smooth edges. Large eyes look just as smooth
+    with less, and drawing them 4x larger would be too slow to follow
+    the mouse (the cost grows with the square of the size)."""
+    return max(2, min(4, round(8 / scale())))
+
+
 def eye_size():
-    return round(SIZE * dpi_scale)
+    return round(SIZE * scale())
 
 
 def window_width():
@@ -300,15 +321,15 @@ def max_pupil_offset():
     return SIZE / 2 - EYE_MARGIN - EYE_OUTLINE - PUPIL_GAP - PUPIL_RADIUS
 
 
-# The eye whites never change, so they are rendered once per DPI. The
-# dpi argument is not used directly, it only keeps the cache per DPI.
+# The eye whites never change, so they are rendered once per scale. The
+# argument is not used directly, it only keeps the cache per scale.
 @functools.lru_cache(maxsize=None)
-def make_eyes(dpi):
-    big_eye = eye_size() * SCALE
+def make_eyes(current_scale):
+    big_eye = eye_size() * oversample()
     image = Image.new("RGBA", (2 * big_eye, big_eye), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)
 
-    s = dpi_scale * SCALE
+    s = scale() * oversample()
     margin = round(EYE_MARGIN * s)
 
     for left in (0, big_eye):
@@ -324,11 +345,11 @@ def make_eyes(dpi):
 
 
 def make_frame(pupils):
-    image = make_eyes(dpi_scale).copy()
+    image = make_eyes(scale()).copy()
     draw = ImageDraw.Draw(image)
 
-    s = dpi_scale * SCALE
-    big_eye = eye_size() * SCALE
+    s = scale() * oversample()
+    big_eye = eye_size() * oversample()
     r = PUPIL_RADIUS * s
 
     for index, (dx, dy) in enumerate(pupils):
@@ -337,8 +358,8 @@ def make_frame(pupils):
         draw.ellipse((round(cx-r), round(cy-r), round(cx+r), round(cy+r)),
                      fill=PUPIL_COLOR)
 
-    image = image.resize((window_width(), eye_size()),
-                         Image.Resampling.LANCZOS)
+    # Average each block of oversample() x oversample() pixels into one.
+    image = image.reduce(oversample())
 
     # UpdateLayeredWindow expects premultiplied BGRA pixels.
     red, green, blue, alpha = image.split()
@@ -438,8 +459,8 @@ def pupils_for_cursor(hwnd):
         # Screen pixels are scaled pixels; convert them to 100 % sizes.
         centre_x = rect.left + eye_size() * index + half
         centre_y = rect.top + half
-        dx = (cursor.x - centre_x) / dpi_scale
-        dy = (cursor.y - centre_y) / dpi_scale
+        dx = (cursor.x - centre_x) / scale()
+        dy = (cursor.y - centre_y) / scale()
 
         distance = math.hypot(dx, dy)
         if distance > limit:
@@ -447,7 +468,7 @@ def pupils_for_cursor(hwnd):
             dy *= limit / distance
 
         # Finer steps than this are invisible after downsampling.
-        step = 1 / (dpi_scale * SCALE)
+        step = 1 / (scale() * oversample())
         pupils.append((round(dx / step) * step, round(dy / step) * step))
 
     return tuple(pupils)
@@ -463,9 +484,40 @@ def follow_cursor(hwnd):
 # Native Windows mouse/menu handling
 # ----------------------------------------------------------------------
 
+def set_zoom(hwnd, new_zoom):
+    """Resize the eyes, keeping them centred on the same spot."""
+    global zoom
+
+    rect = wintypes.RECT()
+    user32.GetWindowRect(hwnd, ctypes.byref(rect))
+    centre_x = (rect.left + rect.right) // 2
+    centre_y = (rect.top + rect.bottom) // 2
+
+    zoom = new_zoom
+    user32.SetWindowPos(
+        hwnd,
+        None,
+        centre_x - window_width() // 2,
+        centre_y - eye_size() // 2,
+        window_width(),
+        eye_size(),
+        SWP_NOZORDER | SWP_NOACTIVATE,
+    )
+    draw_eyes(hwnd, pupils_for_cursor(hwnd))
+
+
 def show_menu(hwnd):
     menu = user32.CreatePopupMenu()
 
+    zoom_menu = user32.CreatePopupMenu()
+    for index, choice in enumerate(ZOOMS):
+        flags = MF_STRING | (MF_CHECKED if choice == zoom else 0)
+        user32.AppendMenuW(zoom_menu, flags, ID_ZOOM_FIRST + index,
+                           f"{choice:g}x")
+
+    # The menu takes ownership of the submenu and destroys it with itself.
+    user32.AppendMenuW(menu, MF_POPUP, zoom_menu, "Zoom")
+    user32.AppendMenuW(menu, MF_SEPARATOR, 0, None)
     user32.AppendMenuW(menu, MF_STRING, ID_EXIT, "Exit")
 
     point = wintypes.POINT()
@@ -487,6 +539,8 @@ def show_menu(hwnd):
 
     if command == ID_EXIT:
         user32.DestroyWindow(hwnd)
+    elif ID_ZOOM_FIRST <= command < ID_ZOOM_FIRST + len(ZOOMS):
+        set_zoom(hwnd, ZOOMS[command - ID_ZOOM_FIRST])
 
 
 @WNDPROC

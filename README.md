@@ -33,7 +33,8 @@ pythonw Win-Eyes.py
 ## Using
 
 - **Left-drag** the eyes to move them anywhere on the screen.
-- **Right-click** them for a menu with **Exit**.
+- **Right-click** them for a menu with **Zoom** (0.75x to 4x) and
+  **Exit**. Zooming keeps the eyes centred where they are.
 
 Each pupil looks towards the mouse pointer, stopping at the edge of its
 eye. When the pointer is inside an eye, the pupil sits right under it.
@@ -47,6 +48,8 @@ Windows scaling.
 | Setting         | Meaning                                            |
 |-----------------|----------------------------------------------------|
 | `SIZE`          | Size of one eye; the window is two eyes wide       |
+| `ZOOM`          | Starting zoom (changeable from the menu)           |
+| `ZOOMS`         | Zoom choices offered in the menu                   |
 | `FOLLOW_MS`     | How often the mouse position is checked (ms)       |
 | `PUPIL_RADIUS`  | Radius of the pupil                                |
 | `PUPIL_GAP`     | Smallest gap between the pupil and the eye outline |

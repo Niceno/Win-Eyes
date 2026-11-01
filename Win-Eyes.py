@@ -12,7 +12,7 @@ from PIL import Image, ImageDraw, ImageChops
 SIZE          = 70   # Size of one eye; the window is two eyes wide
 FOLLOW_MS     = 20   # How often the cursor position is polled
 PUPIL_RADIUS  =  6   # Radius of the pupil
-PUPIL_GAP     =  4   # Smallest gap between the pupil and the eye outline
+PUPIL_GAP     =  6   # Smallest gap between the pupil and the eye outline
 
 EYE_MARGIN    =  5   # Transparent space around each eye
 EYE_OUTLINE   =  5   # Thickness of the eye outline

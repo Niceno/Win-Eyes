@@ -485,20 +485,18 @@ def follow_cursor(hwnd):
 # ----------------------------------------------------------------------
 
 def set_zoom(hwnd, new_zoom):
-    """Resize the eyes, keeping them centred on the same spot."""
+    """Resize the eyes, keeping the upper left corner on the same spot."""
     global zoom
 
     rect = wintypes.RECT()
     user32.GetWindowRect(hwnd, ctypes.byref(rect))
-    centre_x = (rect.left + rect.right) // 2
-    centre_y = (rect.top + rect.bottom) // 2
 
     zoom = new_zoom
     user32.SetWindowPos(
         hwnd,
         None,
-        centre_x - window_width() // 2,
-        centre_y - eye_size() // 2,
+        rect.left,
+        rect.top,
         window_width(),
         eye_size(),
         SWP_NOZORDER | SWP_NOACTIVATE,

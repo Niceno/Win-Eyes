@@ -560,7 +560,7 @@ hwnd = user32.CreateWindowExW(
     "WinEyes",
     WS_POPUP,
     100,
-    100,
+    200,
     2 * SIZE,
     SIZE,
     None,
